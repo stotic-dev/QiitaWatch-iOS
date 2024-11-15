@@ -56,7 +56,9 @@ final class QiitaUserSearchViewModel {
         log.info("[In]")
         
         // 過去の検索ワードを取得
-        loadSearchWord()
+        searchWordModelList = fetchCurrentSearchWordList()
+        continuation?.yield(.appeared(state: ViewStateEntity(searchText: searchText,
+                                                             postSearchTextList: wordList)))
     }
     
     /// 画面非表示時の処理
@@ -71,31 +73,29 @@ final class QiitaUserSearchViewModel {
         
         log.info("[In] text: \(text)")
         searchText = text
-        continuation?.yield(.didAppear(state: .init(searchText: text, postSearchTextList: wordList)))
+        continuation?.yield(.appeared(state: .init(searchText: text, postSearchTextList: wordList)))
     }
     
     /// 検索ボタンタップ時のボタン
-    func tappedSearchButton() {
+    func tappedSearchButton() async {
         
         log.info("Start loading.")
         continuation?.yield(.loading)
         
-        // 入力した文字を保存する
+        // 入力した文字を保存して最新の検索リストを取得する
         saveSearchWord(searchText)
+        searchWordModelList = fetchCurrentSearchWordList()
         
-        Task {
+        do {
             
-            do {
-                
-                let fetchedUser = try await qiitaUserRepository.fetchByUserId(searchText)
-                
-                log.debug("Complete fetched user: \(fetchedUser).")
-                continuation?.yield(.screenTransition(user: fetchedUser))
-            }
-            catch(let error as QiitaUserRepository.FetchError) {
-                
-                handleFetchQiitaUserError(error)
-            }
+            let fetchedUser = try await qiitaUserRepository.fetchByUserId(searchText)
+            
+            log.debug("Complete fetched user: \(fetchedUser).")
+            continuation?.yield(.screenTransition(user: fetchedUser))
+        }
+        catch {
+            
+            handleFetchQiitaUserError(error)
         }
     }
 }
@@ -108,7 +108,7 @@ private extension QiitaUserSearchViewModel {
         
         let handler: @Sendable () -> Void = { [continuation, searchText, wordList] in
             
-            continuation?.yield(.didAppear(state: .init(searchText: searchText,
+            continuation?.yield(.appeared(state: .init(searchText: searchText,
                                                         postSearchTextList: wordList)))
         }
         
@@ -128,16 +128,22 @@ private extension QiitaUserSearchViewModel {
         continuation?.yield(.alert(alert: alertCase))
     }
     
-    func loadSearchWord() {
+    func fetchCurrentSearchWordList() -> [SearchWordModel] {
         
-        searchWordModelList = (try? searchWordRepository.fetchAll()) ?? []
-        continuation?.yield(.didAppear(state: ViewStateEntity(searchText: searchText,
-                                                              postSearchTextList: wordList)))
+        return (try? searchWordRepository.fetchAll()) ?? []
     }
     
     func saveSearchWord(_ text: String) {
         
-        searchWordRepository.insert(text)
+        do {
+            
+            try searchWordRepository.insertOrUpdate(text)
+            log.info("Complete insert or update(text=\(text)).")
+        }
+        catch {
+            
+            log.error("Failed update: \(error).")
+        }
     }
 }
 
@@ -150,7 +156,7 @@ extension QiitaUserSearchViewModel {
         /// 初期状態
         case initial(state: ViewStateEntity)
         /// 画面表示中
-        case didAppear(state: ViewStateEntity)
+        case appeared(state: ViewStateEntity)
         /// ロード中
         case loading
         /// 画面遷移中

@@ -55,7 +55,7 @@ extension QiitaUserSearchSceneTest {
             await assertViewState(stateObserver,
                                   expectedStateStream: [
                                     .initial(state: .initial),
-                                    .didAppear(state: .init(isEnabledSearchButton: false,
+                                    .appeared(state: .init(isEnabledSearchButton: false,
                                                             postSearchTextList: defaultSearchWord.reversed()))
                                   ],
                                   expectation: expectation)
@@ -98,10 +98,10 @@ extension QiitaUserSearchSceneTest {
             await assertViewState(stateObserver,
                                   expectedStateStream: [
                                     .initial(state: .initial), // 初期状態
-                                    .didAppear(state: .init(isEnabledSearchButton: false, postSearchTextList: defaultSearchWord.reversed())), // 画面表示後
-                                    .didAppear(state: .init(isEnabledSearchButton: true, postSearchTextList: defaultSearchWord.reversed())), // 文字入力
-                                    .didAppear(state: .init(isEnabledSearchButton: false, postSearchTextList: defaultSearchWord.reversed())), // 文字削除
-                                    .didAppear(state: .init(isEnabledSearchButton: true, postSearchTextList: defaultSearchWord.reversed())), // 文字入力
+                                    .appeared(state: .init(isEnabledSearchButton: false, postSearchTextList: defaultSearchWord.reversed())), // 画面表示後
+                                    .appeared(state: .init(isEnabledSearchButton: true, postSearchTextList: defaultSearchWord.reversed())), // 文字入力
+                                    .appeared(state: .init(isEnabledSearchButton: false, postSearchTextList: defaultSearchWord.reversed())), // 文字削除
+                                    .appeared(state: .init(isEnabledSearchButton: true, postSearchTextList: defaultSearchWord.reversed())), // 文字入力
                                     .loading, // 検索ボタン押下後ロード中
                                     .screenTransition(user: expectedOutput) // ユーザー取得で画面遷移
                                   ],
@@ -112,11 +112,9 @@ extension QiitaUserSearchSceneTest {
         viewModel.didEnterTextField("xxx")
         viewModel.didEnterTextField("")
         viewModel.didEnterTextField(inputKeyword)
-        viewModel.tappedSearchButton()
-        
-        try await Task.sleep(for: .seconds(1))
+        await viewModel.tappedSearchButton()
         viewModel.viewDissapper()
-        
+    
         await fulfillment(of: [expectation], timeout: 5)
         
         // 検索ワードが保存されていることを確認
@@ -131,9 +129,10 @@ extension QiitaUserSearchSceneTest {
     ///
     /// # 仕様
     /// - ユーザーの取得件数が0件だった旨のアラートを表示する
+    /// - 前回検索した文言で検索する場合、その文言を検索文字リストの一番前に表示するようにする
     func testEmptyFetchUserList() async throws {
         
-        let inputKeyword = "test"
+        let inputKeyword = "6"
 
         let expectedError = AFError.responseSerializationFailed(reason: .decodingFailed(error: DecodingError.valueNotFound(String.self, .init(codingPath: [], debugDescription: ""))))
         let mockApiClient = ApiClientMock<QiitaUserModel>(expectedInput: .fetchQiitaUsersService(keyword: inputKeyword),
@@ -152,8 +151,8 @@ extension QiitaUserSearchSceneTest {
             await assertViewState(stateObserver,
                                   expectedStateStream: [
                                     .initial(state: .initial), // 初期状態
-                                    .didAppear(state: .init(isEnabledSearchButton: false, postSearchTextList: defaultSearchWord.reversed())), // 画面表示後
-                                    .didAppear(state: .init(isEnabledSearchButton: true, postSearchTextList: defaultSearchWord.reversed())), // 文字入力,
+                                    .appeared(state: .init(isEnabledSearchButton: false, postSearchTextList: defaultSearchWord.reversed())), // 画面表示後
+                                    .appeared(state: .init(isEnabledSearchButton: true, postSearchTextList: defaultSearchWord.reversed())), // 文字入力,
                                     .loading, // 検索ボタン押下後ロード中
                                     .alert(alert: .noHitQiitaUser(firstHandler: {})) // ユーザー取得できずアラート表示
                                   ],
@@ -162,12 +161,17 @@ extension QiitaUserSearchSceneTest {
         
         viewModel.viewDidLoad()
         viewModel.didEnterTextField(inputKeyword)
-        viewModel.tappedSearchButton()
-        
-        try await Task.sleep(for: .seconds(1))
+        await viewModel.tappedSearchButton()
         viewModel.viewDissapper()
         
         await fulfillment(of: [expectation], timeout: 5)
+        
+        // 検索ワードが更新されていることを確認
+        let sortDescriptor = SortDescriptor<SearchWordModel>(\.createdAt, order: .reverse)
+        let searchWords = try container.mainContext.fetch(FetchDescriptor<SearchWordModel>(sortBy: [sortDescriptor])).map { $0.word }
+        var expectedSearchWords = defaultSearchWord.reversed().map(\.self)
+        expectedSearchWords.insert(expectedSearchWords.remove(at: expectedSearchWords.firstIndex(of: inputKeyword)!), at: .zero)
+        XCTAssertEqual(searchWords, expectedSearchWords)
     }
     
     // MARK: - 異常系
@@ -197,8 +201,8 @@ extension QiitaUserSearchSceneTest {
             await assertViewState(stateObserver,
                                   expectedStateStream: [
                                     .initial(state: .initial), // 初期状態
-                                    .didAppear(state: .init(isEnabledSearchButton: false, postSearchTextList: defaultSearchWord.reversed())), // 画面表示後
-                                    .didAppear(state: .init(isEnabledSearchButton: true, postSearchTextList: defaultSearchWord.reversed())), // 文字入力
+                                    .appeared(state: .init(isEnabledSearchButton: false, postSearchTextList: defaultSearchWord.reversed())), // 画面表示後
+                                    .appeared(state: .init(isEnabledSearchButton: true, postSearchTextList: defaultSearchWord.reversed())), // 文字入力
                                     .loading, // 検索ボタン押下後ロード中
                                     .alert(alert: .networkError(firstHandler: {})) // エラーによりアラート表示
                                   ],
@@ -207,9 +211,7 @@ extension QiitaUserSearchSceneTest {
         
         viewModel.viewDidLoad()
         viewModel.didEnterTextField(inputKeyword)
-        viewModel.tappedSearchButton()
-        
-        try await Task.sleep(for: .seconds(1))
+        await viewModel.tappedSearchButton()
         viewModel.viewDissapper()
         
         await fulfillment(of: [expectation], timeout: 5)

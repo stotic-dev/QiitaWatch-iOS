@@ -11,13 +11,11 @@ import SwiftData
 @Model
 final class SearchWordModel {
     
-    @Attribute(.unique) var id: String
-    var word: String
+    @Attribute(.unique) var word: String
     var createdAt: TimeInterval
     
     init(word: String) {
         
-        self.id = UUID().uuidString
         self.word = word
         self.createdAt = Date.now.timeIntervalSince1970
     }

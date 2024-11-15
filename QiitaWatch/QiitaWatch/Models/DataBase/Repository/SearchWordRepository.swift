@@ -26,23 +26,37 @@ final class SearchWordRepository {
         return try context.fetch(FetchDescriptor<SearchWordModel>(sortBy: [sortDescriptor]))
     }
     
-    /// 検索文字を保存する
+    /// 検索文字を保存もしくは更新する
     /// - Parameter word: 保存する文字
-    func insert(_ word: String) {
+    /// - Description: すでに同じ文字が保存されている場合は作成日時を現在に更新する
+    func insertOrUpdate(_ word: String) throws {
         
-        let model = SearchWordModel(word: word)
-        context.insert(model)
+        if let target = fetchById(word) {
+            
+            target.createdAt = Date.now.timeIntervalSince1970
+            try context.save()
+        }
+        else {
+            
+            let model = SearchWordModel(word: word)
+            context.insert(model)
+        }
     }
     
     /// 保存している検索文字を削除する
-    /// - Parameter id: モデルのID
-    func delete(_ id: String) {
+    /// - Parameter word: 検索文字
+    func delete(_ word: String) {
         
-        let predicateById = #Predicate<SearchWordModel> { $0.id == id }
-        guard let target = try? context.fetch(FetchDescriptor<SearchWordModel>(predicate: predicateById)).first else {
-            
-            return
-        }
+        guard let target = fetchById(word) else { return }
         context.delete(target)
+    }
+}
+
+private extension SearchWordRepository {
+    
+    func fetchById(_ word: String) -> SearchWordModel? {
+        
+        let predicateById = #Predicate<SearchWordModel> { $0.word == word }
+        return try? context.fetch(FetchDescriptor<SearchWordModel>(predicate: predicateById)).first
     }
 }
