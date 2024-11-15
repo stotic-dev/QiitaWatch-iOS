@@ -73,24 +73,19 @@ extension QiitaUserSearchSceneTest {
     /// - テキストフィールドに文字が入力されている場合は、その文字でユーザーを取得する
     /// - ユーザー一覧取得後にテキストフィールドの文字を過去の検索ワードに保存する
     /// - ユーザーを取得できた場合は、ユーザー情報画面へ遷移する
-    func testTappedSearchButton() throws {
+    func testTappedSearchButton() async throws {
         
         let inputKeyword = "test"
-        guard let expectedApiInput: ApiService = .fetchQiitaUsersService(keyword: inputKeyword) else {
-            
-            XCTFail("Fail create input.")
-            return
-        }
         let expectedOutput = QiitaUserModel(id: UUID().uuidString,
                                             name: "test name",
                                             description: "xxxxxxxx",
                                             followees_count: 10,
                                             followers_count: 100,
                                             profile_image_url: "https://test.com/test.png")
-        let mockApiClient = ApiClientMock(expectedInput: expectedApiInput,
+        let mockApiClient = ApiClientMock(expectedInput: .fetchQiitaUsersService(keyword: inputKeyword),
                                           expectedResult: .success(expectedOutput))
         
-        let viewModel = QiitaUserSearchViewModel(context: container.mainContext)
+        let viewModel = QiitaUserSearchViewModel(context: container.mainContext, apiClient: mockApiClient)
         let expectation = expectation(description: "view state")
         guard let stateObserver = viewModel.stateObserver else {
             
@@ -103,11 +98,12 @@ extension QiitaUserSearchSceneTest {
             await assertViewState(stateObserver,
                                   expectedStateStream: [
                                     .initial(state: .initial), // 初期状態
-                                    .didAppear(state: .init(isEnabledSearchButton: false, postSearchTextList: defaultSearchWord)), // 画面表示後
-                                    .didAppear(state: .init(isEnabledSearchButton: true, postSearchTextList: defaultSearchWord)), // 文字入力
-                                    .didAppear(state: .init(isEnabledSearchButton: false, postSearchTextList: defaultSearchWord)), // 文字削除
-                                    .didAppear(state: .init(isEnabledSearchButton: true, postSearchTextList: defaultSearchWord)), // 文字入力
-                                    .screenTransition(user: expectedOutput) // 検索ボタン押下後
+                                    .didAppear(state: .init(isEnabledSearchButton: false, postSearchTextList: defaultSearchWord.reversed())), // 画面表示後
+                                    .didAppear(state: .init(isEnabledSearchButton: true, postSearchTextList: defaultSearchWord.reversed())), // 文字入力
+                                    .didAppear(state: .init(isEnabledSearchButton: false, postSearchTextList: defaultSearchWord.reversed())), // 文字削除
+                                    .didAppear(state: .init(isEnabledSearchButton: true, postSearchTextList: defaultSearchWord.reversed())), // 文字入力
+                                    .loading, // 検索ボタン押下後ロード中
+                                    .screenTransition(user: expectedOutput) // ユーザー取得で画面遷移
                                   ],
                                   expectation: expectation)
         }
@@ -117,15 +113,17 @@ extension QiitaUserSearchSceneTest {
         viewModel.didEnterTextField("")
         viewModel.didEnterTextField(inputKeyword)
         viewModel.tappedSearchButton()
+        
+        try await Task.sleep(for: .seconds(1))
         viewModel.viewDissapper()
         
-        wait(for: [expectation], timeout: 5)
+        await fulfillment(of: [expectation], timeout: 5)
         
         // 検索ワードが保存されていることを確認
         let sortDescriptor = SortDescriptor<SearchWordModel>(\.createdAt, order: .reverse)
         let searchWords = try container.mainContext.fetch(FetchDescriptor<SearchWordModel>(sortBy: [sortDescriptor])).map { $0.word }
         var expectedSearchWords = defaultSearchWord.reversed().map(\.self)
-        expectedSearchWords.append(inputKeyword)
+        expectedSearchWords.insert(inputKeyword, at: .zero)
         XCTAssertEqual(searchWords, expectedSearchWords)
     }
     
@@ -133,17 +131,12 @@ extension QiitaUserSearchSceneTest {
     ///
     /// # 仕様
     /// - ユーザーの取得件数が0件だった旨のアラートを表示する
-    func testEmptyFetchUserList() throws {
+    func testEmptyFetchUserList() async throws {
         
         let inputKeyword = "test"
-        guard let expectedApiInput: ApiService = .fetchQiitaUsersService(keyword: inputKeyword) else {
-            
-            XCTFail("Fail create input.")
-            return
-        }
 
         let expectedError = AFError.responseSerializationFailed(reason: .decodingFailed(error: DecodingError.valueNotFound(String.self, .init(codingPath: [], debugDescription: ""))))
-        let mockApiClient = ApiClientMock<QiitaUserModel>(expectedInput: expectedApiInput,
+        let mockApiClient = ApiClientMock<QiitaUserModel>(expectedInput: .fetchQiitaUsersService(keyword: inputKeyword),
                                                           expectedResult: .failure(expectedError))
         
         let viewModel = QiitaUserSearchViewModel(context: container.mainContext, apiClient: mockApiClient)
@@ -159,9 +152,10 @@ extension QiitaUserSearchSceneTest {
             await assertViewState(stateObserver,
                                   expectedStateStream: [
                                     .initial(state: .initial), // 初期状態
-                                    .didAppear(state: .init(isEnabledSearchButton: false, postSearchTextList: defaultSearchWord)), // 画面表示後
-                                    .didAppear(state: .init(isEnabledSearchButton: true, postSearchTextList: defaultSearchWord)), // 文字入力
-                                    .alert(alert: .noHitQiitaUser(firstHandler: {})) // 検索ボタン押下後
+                                    .didAppear(state: .init(isEnabledSearchButton: false, postSearchTextList: defaultSearchWord.reversed())), // 画面表示後
+                                    .didAppear(state: .init(isEnabledSearchButton: true, postSearchTextList: defaultSearchWord.reversed())), // 文字入力,
+                                    .loading, // 検索ボタン押下後ロード中
+                                    .alert(alert: .noHitQiitaUser(firstHandler: {})) // ユーザー取得できずアラート表示
                                   ],
                                   expectation: expectation)
         }
@@ -169,9 +163,11 @@ extension QiitaUserSearchSceneTest {
         viewModel.viewDidLoad()
         viewModel.didEnterTextField(inputKeyword)
         viewModel.tappedSearchButton()
+        
+        try await Task.sleep(for: .seconds(1))
         viewModel.viewDissapper()
         
-        wait(for: [expectation], timeout: 5)
+        await fulfillment(of: [expectation], timeout: 5)
     }
     
     // MARK: - 異常系
@@ -180,17 +176,12 @@ extension QiitaUserSearchSceneTest {
     ///
     /// # 仕様
     /// - 通信に失敗した旨のアラートを表示する
-    func testFailedFetchUserByNetwork() throws {
+    func testFailedFetchUserByNetwork() async throws {
         
         let inputKeyword = "test"
-        guard let expectedApiInput: ApiService = .fetchQiitaUsersService(keyword: inputKeyword) else {
-            
-            XCTFail("Fail create input.")
-            return
-        }
 
         let expectedError = AFError.explicitlyCancelled
-        let mockApiClient = ApiClientMock<QiitaUserModel>(expectedInput: expectedApiInput,
+        let mockApiClient = ApiClientMock<QiitaUserModel>(expectedInput: .fetchQiitaUsersService(keyword: inputKeyword),
                                                           expectedResult: .failure(expectedError))
         
         let viewModel = QiitaUserSearchViewModel(context: container.mainContext, apiClient: mockApiClient)
@@ -206,9 +197,10 @@ extension QiitaUserSearchSceneTest {
             await assertViewState(stateObserver,
                                   expectedStateStream: [
                                     .initial(state: .initial), // 初期状態
-                                    .didAppear(state: .init(isEnabledSearchButton: false, postSearchTextList: defaultSearchWord)), // 画面表示後
-                                    .didAppear(state: .init(isEnabledSearchButton: true, postSearchTextList: defaultSearchWord)), // 文字入力
-                                    .alert(alert: .networkError(firstHandler: {})) // 検索ボタン押下後
+                                    .didAppear(state: .init(isEnabledSearchButton: false, postSearchTextList: defaultSearchWord.reversed())), // 画面表示後
+                                    .didAppear(state: .init(isEnabledSearchButton: true, postSearchTextList: defaultSearchWord.reversed())), // 文字入力
+                                    .loading, // 検索ボタン押下後ロード中
+                                    .alert(alert: .networkError(firstHandler: {})) // エラーによりアラート表示
                                   ],
                                   expectation: expectation)
         }
@@ -216,45 +208,11 @@ extension QiitaUserSearchSceneTest {
         viewModel.viewDidLoad()
         viewModel.didEnterTextField(inputKeyword)
         viewModel.tappedSearchButton()
+        
+        try await Task.sleep(for: .seconds(1))
         viewModel.viewDissapper()
         
-        wait(for: [expectation], timeout: 5)
-    }
-    
-    /// 検索ボタン押下時に入力した文字の原因でユーザー取得に失敗した時の処理確認
-    ///
-    /// # 仕様
-    /// - 不正な入力があった旨のアラートを表示する
-    func testFailedFetchUserByInputText() throws {
-        
-        let inputKeyword = "//////..////"
-        
-        let viewModel = QiitaUserSearchViewModel(context: container.mainContext)
-        let expectation = expectation(description: "view state")
-        guard let stateObserver = viewModel.stateObserver else {
-            
-            XCTFail()
-            return
-        }
-        
-        Task {
-            
-            await assertViewState(stateObserver,
-                                  expectedStateStream: [
-                                    .initial(state: .initial), // 初期状態
-                                    .didAppear(state: .init(isEnabledSearchButton: false, postSearchTextList: defaultSearchWord)), // 画面表示後
-                                    .didAppear(state: .init(isEnabledSearchButton: true, postSearchTextList: defaultSearchWord)), // 文字入力
-                                    .alert(alert: .invalidInputOnTextField(firstHandler: {})) // 検索ボタン押下後
-                                  ],
-                                  expectation: expectation)
-        }
-        
-        viewModel.viewDidLoad()
-        viewModel.didEnterTextField(inputKeyword)
-        viewModel.tappedSearchButton()
-        viewModel.viewDissapper()
-        
-        wait(for: [expectation], timeout: 5)
+        await fulfillment(of: [expectation], timeout: 5)
     }
 }
 

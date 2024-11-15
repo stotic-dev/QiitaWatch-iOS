@@ -5,9 +5,10 @@
 //  Created by 佐藤汰一 on 2024/11/14.
 //
 
+import Alamofire
 import Foundation
 
-struct QiitaUserRepository {
+struct QiitaUserRepository: Sendable {
     
     private let client: ApiClient
     
@@ -16,16 +17,20 @@ struct QiitaUserRepository {
         self.client = client
     }
     
-    func fetchByUserId(_ userId: String) async throws -> QiitaUserModel {
-        
-        guard let service = ApiService.fetchQiitaUsersService(keyword: userId) else {
-            
-            throw FetchError.invalidUrlError
-        }
-        
+    func fetchByUserId(_ userId: String) async throws(FetchError) -> QiitaUserModel {
+                
         do {
             
-            return try await client.get(service)
+            return try await client.get(.fetchQiitaUsersService(keyword: userId))
+        }
+        catch(let error as AFError) {
+            
+            if error.isResponseSerializationError {
+                
+                throw FetchError.noHitUser
+            }
+            
+            throw FetchError.networkError(error)
         }
         catch {
             
@@ -42,8 +47,8 @@ extension QiitaUserRepository {
         
         /// ネットワークのエラー
         case networkError(Error)
-        /// URLの生成に失敗した際のエラー
-        case invalidUrlError
+        /// ユーザーがヒットしなかった
+        case noHitUser
     }
 }
 
@@ -51,11 +56,12 @@ extension QiitaUserRepository {
 
 extension ApiService {
     
-    static func fetchQiitaUsersService(keyword: String) -> Self? {
+    static func fetchQiitaUsersService(keyword: String) -> Self {
         
         guard let url = URL(string: "https://qiita.com/api/v2/users/")?.appending(path: keyword) else {
             
-            return nil
+            // URLが生成できないケースは、固定値のURL自体に誤りがあるケースで外部の入力に依存せず定数の誤りなのでfatalエラーに倒す
+            fatalError("Invalid URL.")
         }
         
         return ApiService(url: url)

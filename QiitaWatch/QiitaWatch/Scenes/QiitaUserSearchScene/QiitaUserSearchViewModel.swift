@@ -19,12 +19,23 @@ final class QiitaUserSearchViewModel {
     private var continuation: AsyncStream<ViewState>.Continuation?
     /// 入力中の検索文字
     private var searchText = ""
-    private var wordList: [SearchWordModel] = []
+    /// 過去の検索文字のモデルリスト
+    private var searchWordModelList: [SearchWordModel] = [] {
+        
+        didSet {
+            
+            wordList = searchWordModelList.map { $0.word }
+        }
+    }
+    /// 過去の検索文字リスト
+    private var wordList: [String] = []
     
     // MARK: dependency
     
     private let searchWordRepository: SearchWordRepository
     private let qiitaUserRepository: QiitaUserRepository
+    
+    // MARK: - initialize method
     
     init(context: ModelContext, apiClient: ApiClient = QiitaApiClientImpl()) {
         
@@ -45,9 +56,7 @@ final class QiitaUserSearchViewModel {
         log.info("[In]")
         
         // 過去の検索ワードを取得
-        wordList = (try? searchWordRepository.fetchAll()) ?? []
-        continuation?.yield(.didAppear(state: ViewStateEntity(searchText: searchText,
-                                                              postSearchTextList: wordList.map { $0.word })))
+        loadSearchWord()
     }
     
     /// 画面非表示時の処理
@@ -61,12 +70,74 @@ final class QiitaUserSearchViewModel {
     func didEnterTextField(_ text: String) {
         
         log.info("[In] text: \(text)")
+        searchText = text
+        continuation?.yield(.didAppear(state: .init(searchText: text, postSearchTextList: wordList)))
     }
     
     /// 検索ボタンタップ時のボタン
     func tappedSearchButton() {
         
-        log.info("[In]")
+        log.info("Start loading.")
+        continuation?.yield(.loading)
+        
+        // 入力した文字を保存する
+        saveSearchWord(searchText)
+        
+        Task {
+            
+            do {
+                
+                let fetchedUser = try await qiitaUserRepository.fetchByUserId(searchText)
+                
+                log.debug("Complete fetched user: \(fetchedUser).")
+                continuation?.yield(.screenTransition(user: fetchedUser))
+            }
+            catch(let error as QiitaUserRepository.FetchError) {
+                
+                handleFetchQiitaUserError(error)
+            }
+        }
+    }
+}
+
+// MARK: - private method
+
+private extension QiitaUserSearchViewModel {
+    
+    func handleFetchQiitaUserError(_ error: QiitaUserRepository.FetchError) {
+        
+        let handler: @Sendable () -> Void = { [continuation, searchText, wordList] in
+            
+            continuation?.yield(.didAppear(state: .init(searchText: searchText,
+                                                        postSearchTextList: wordList)))
+        }
+        
+        var alertCase: AlertCase
+        
+        log.error("error: \(error)")
+        
+        switch error {
+            
+        case .networkError:
+            alertCase = .networkError(firstHandler: handler)
+            
+        case .noHitUser:
+            alertCase = .noHitQiitaUser(firstHandler: handler)
+        }
+        
+        continuation?.yield(.alert(alert: alertCase))
+    }
+    
+    func loadSearchWord() {
+        
+        searchWordModelList = (try? searchWordRepository.fetchAll()) ?? []
+        continuation?.yield(.didAppear(state: ViewStateEntity(searchText: searchText,
+                                                              postSearchTextList: wordList)))
+    }
+    
+    func saveSearchWord(_ text: String) {
+        
+        searchWordRepository.insert(text)
     }
 }
 
@@ -76,10 +147,15 @@ extension QiitaUserSearchViewModel {
     
     enum ViewState: Equatable {
         
+        /// 初期状態
         case initial(state: ViewStateEntity)
+        /// 画面表示中
         case didAppear(state: ViewStateEntity)
+        /// ロード中
         case loading
+        /// 画面遷移中
         case screenTransition(user: QiitaUserModel)
+        /// アラート表示中
         case alert(alert: AlertCase)
     }
     
@@ -87,24 +163,20 @@ extension QiitaUserSearchViewModel {
         
         /// 検索ボタンが使用可能か
         let isEnabledSearchButton: Bool
-        /// Qiitaのユーザーリスト
-        let userList: [String]
         /// 過去の検索ワード
         let postSearchTextList: [String]
         
         static let initial = ViewStateEntity(isEnabledSearchButton: false)
         
-        init(isEnabledSearchButton: Bool, userList: [String] = [], postSearchTextList: [String] = []) {
+        init(isEnabledSearchButton: Bool, postSearchTextList: [String] = []) {
             
             self.isEnabledSearchButton = isEnabledSearchButton
-            self.userList = userList
             self.postSearchTextList = postSearchTextList
         }
         
-        init(searchText: String, userList: [String] = [], postSearchTextList: [String] = []) {
+        init(searchText: String, postSearchTextList: [String] = []) {
             
             self.isEnabledSearchButton = !searchText.isEmpty
-            self.userList = userList
             self.postSearchTextList = postSearchTextList
         }
     }

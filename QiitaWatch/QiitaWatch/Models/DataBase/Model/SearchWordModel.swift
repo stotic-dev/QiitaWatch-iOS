@@ -9,7 +9,7 @@ import Foundation
 import SwiftData
 
 @Model
-final class SearchWordModel: Sendable {
+final class SearchWordModel {
     
     @Attribute(.unique) var id: String
     var word: String

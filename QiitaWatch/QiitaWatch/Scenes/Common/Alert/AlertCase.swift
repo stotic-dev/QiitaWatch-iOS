@@ -12,7 +12,6 @@ enum AlertCase {
     typealias Handler = @Sendable () -> Void
     
     case noHitQiitaUser(firstHandler: Handler) // ユーザ取得が0件だった場合のアラート
-    case invalidInputOnTextField(firstHandler: Handler) // テキストフィールドに不正な値を入力した場合のアラート
     case networkError(firstHandler: Handler) // 通信エラーの場合のアラート
 }
 
@@ -27,11 +26,6 @@ extension AlertCase {
         case .noHitQiitaUser:
             return "ユーザーが取得できませんでした。"
             
-        case .invalidInputOnTextField:
-            return "不正な入力です。"
-            + "\n"
-            + "入力内容を変えて再度お試しください。"
-            
         case .networkError:
             return "通信に失敗しました。"
             + "\n"
@@ -43,7 +37,7 @@ extension AlertCase {
         
         switch self {
             
-        case .noHitQiitaUser, .invalidInputOnTextField, .networkError:
+        case .noHitQiitaUser, .networkError:
             return "閉じる"
         }
     }
@@ -52,7 +46,7 @@ extension AlertCase {
         
         switch self {
             
-        case .noHitQiitaUser, .invalidInputOnTextField, .networkError:
+        case .noHitQiitaUser, .networkError:
             return nil
         }
     }

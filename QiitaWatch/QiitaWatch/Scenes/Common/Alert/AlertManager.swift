@@ -19,7 +19,6 @@ struct AlertManager {
         switch alertCase {
             
         case .noHitQiitaUser(let firstHandler),
-                .invalidInputOnTextField(let firstHandler),
                 .networkError(let firstHandler):
             alert.addAction(.init(title: alertCase.firstButtonTitle,
                                   style: .default) { _ in
