@@ -6,14 +6,17 @@
 //
 
 import UIKit
+import SwiftData
 
 @main
-class AppDelegate: UIResponder, UIApplicationDelegate {
-
-
+final class AppDelegate: UIResponder, UIApplicationDelegate {
+    
+    private(set) var databaseContainer: ModelContainer?
 
     func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?) -> Bool {
-        // Override point for customization after application launch.
+        
+        databaseContainer = ContainerFactory.initialize()
+        
         return true
     }
 
@@ -30,7 +33,15 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
         // If any sessions were discarded while the application was not running, this will be called shortly after application:didFinishLaunchingWithOptions.
         // Use this method to release any resources that were specific to the discarded scenes, as they will not return.
     }
-
-
 }
 
+extension AppDelegate {
+    
+    /// AppDelegateに登録されているDBのContainerインスタンスを取得する
+    static func getDatabaseContainer() -> ModelContainer? {
+        
+        guard let delegate = UIApplication.shared.delegate as? AppDelegate,
+              let container = delegate.databaseContainer else { return nil }
+        return container
+    }
+}
